@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>交易执行确认 | Quantum Vision</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg-dark: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc; --accent-blue: #3b82f6; }
+        body { background-color: var(--bg-dark); color: var(--text-main); font-family: 'Inter', sans-serif; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; }
+        .form-control { background-color: #0f172a; border-color: #334155; color: white; }
+        .form-control:focus { background-color: #0f172a; color: white; border-color: var(--accent-blue); }
+        .btn-buy { background: #10b981; border: none; color: white; }
+        .btn-buy:hover { background: #059669; }
+        .highlight-val { font-family: 'JetBrains Mono'; color: var(--accent-blue); }
+    </style>
+</head>
+<body class="py-5">
+
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <a href="{% url 'dashboard' %}" class="btn btn-outline-secondary"><i class="fa-solid fa-arrow-left me-2"></i>返回大厅</a>
+        <div class="text-end">
+            <span class="text-muted small">当前账户模式</span>
+            <div class="badge bg-warning text-dark"><i class="fa-solid fa-flask me-1"></i>模拟仿真 (Simulation)</div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-5">
+            <div class="glass-card h-100 p-4 border-info border-opacity-25" style="border-left: 5px solid #3b82f6;">
+                <h5 class="mb-4 text-white"><i class="fa-solid fa-brain me-2"></i>AI 策略分析报告</h5>
+
+                <div class="text-center mb-4">
+                    <img src="{{ record.chart_image.url }}" class="img-fluid rounded border border-secondary" style="max-height: 200px;">
+                </div>
+
+                <div class="mb-3">
+                    <label class="text-muted small">最终决策信号</label>
+                    <div class="h3 {% if final_signal == 'BUY' %}text-success{% else %}text-warning{% endif %}">
+                        {{ final_signal }}
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h4 class="card-title m-0">决策分析</h4>
+                        <div class="mt-1">
+                             </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#strategyModal">
+                            <i class="fa-solid fa-sliders"></i>
+                        </button>
+
+                        {% if record.final_signal == 'BUY' or result.final_signal == 'BUY' %}
+                            <a href="{% url 'trade_ticket' record.id|default:1 %}" class="btn btn-success btn-sm fw-bold shadow">
+                                <i class="fa-solid fa-cart-shopping me-1"></i> BUY
+                            </a>
+                        {% else %}
+                            <button class="btn btn-secondary btn-sm" disabled title="非买入信号，禁止开仓">
+                                <i class="fa-solid fa-ban me-1"></i> BUY
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="text-muted small">核心理由</label>
+                    <div class="p-3 bg-dark rounded text-light small fst-italic">
+                        "{{ ai_data.reason }}"
+                    </div>
+                </div>
+
+                <div class="row g-2">
+                    <div class="col-6">
+                        <div class="p-2 bg-dark rounded text-center">
+                            <small class="text-muted d-block">推荐止损 (SL)</small>
+                            <span class="text-danger fw-bold highlight-val">{{ rec_sl }}</span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 bg-dark rounded text-center">
+                            <small class="text-muted d-block">推荐止盈 (TP)</small>
+                            <span class="text-success fw-bold highlight-val">{{ rec_tp }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="glass-card h-100 p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="m-0"><i class="fa-solid fa-ticket me-2"></i>下单确认</h4>
+                    <div class="text-end">
+                        <small class="text-muted d-block">可用资金</small>
+                        <span class="h5 text-white font-monospace">¥ {{ account.balance }}</span>
+                    </div>
+                </div>
+
+                <div class="alert alert-dark border-secondary mb-4" role="alert">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <i class="fa-solid fa-link me-2 text-info"></i>
+                        <strong>交易通道:</strong>
+                        {% if account.is_simulation %}
+                            <span class="badge bg-warning text-dark">模拟仿真</span>
+                        {% else %}
+                            <span class="badge bg-danger">国泰君安实盘</span>
+                        {% endif %}
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="modeSwitch"
+                               {% if not account.is_simulation %}checked{% endif %}
+                               onchange="toggleSimulationMode(this)">
+                        <label class="form-check-label small text-muted" for="modeSwitch">启用实盘</label>
+                    </div>
+                </div>
+
+    {% if not account.is_simulation %}
+    <div class="mt-2 pt-2 border-top border-secondary small">
+        <div class="text-info">API 状态: {% if account.broker_app_id %}已配置{% else %}未配置 (请去设置页填写){% endif %}</div>
+    </div>
+    {% endif %}
+</div>
+
+                <form id="orderForm">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label text-muted small">交易标的</label>
+                            <input type="text" class="form-control form-control-lg fw-bold" id="symbol" value="{{ symbol }}" readonly>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-muted small">方向</label>
+                            <select class="form-select form-select-lg bg-dark text-success border-success" disabled>
+                                <option>BUY (做多)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label text-muted small">买入价格 (模拟市价)</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark border-secondary text-muted">¥</span>
+                            <input type="number" class="form-control form-control-lg font-monospace" id="price" placeholder="请输入当前价格" step="0.01">
+                        </div>
+                        <div class="form-text text-info small"><i class="fa-solid fa-circle-info me-1"></i>模拟模式下请手动输入当前即时价格</div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label text-muted small">买入数量 (股/手)</label>
+                        <input type="number" class="form-control form-control-lg font-monospace" id="quantity" value="100" step="100">
+                        <div class="text-end mt-1 small text-muted">预计金额: <span id="totalCost">0.00</span></div>
+                    </div>
+
+                    <hr class="border-secondary mb-4">
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label text-muted small">止损价 (Stop Loss)</label>
+                            <input type="number" class="form-control border-danger text-danger" id="sl" value="{{ rec_sl }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-muted small">止盈价 (Take Profit)</label>
+                            <input type="number" class="form-control border-success text-success" id="tp" value="{{ rec_tp }}">
+                        </div>
+                    </div>
+
+                    <button type="button" onclick="submitOrder()" class="btn btn-buy w-100 py-3 fw-bold fs-5 shadow-lg">
+                        <i class="fa-solid fa-paper-plane me-2"></i>确认买入 (SIMULATE)
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // 自动计算总金额
+    const priceInput = document.getElementById('price');
+    const qtyInput = document.getElementById('quantity');
+    const totalSpan = document.getElementById('totalCost');
+
+    function calcTotal() {
+        const p = parseFloat(priceInput.value) || 0;
+        const q = parseInt(qtyInput.value) || 0;
+        totalSpan.innerText = (p * q).toFixed(2);
+    }
+    priceInput.addEventListener('input', calcTotal);
+    qtyInput.addEventListener('input', calcTotal);
+
+    // 提交订单
+    async function submitOrder() {
+        const btn = document.querySelector('.btn-buy');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 处理中...';
+
+        const data = {
+            record_id: {{ record.id }},
+            symbol: document.getElementById('symbol').value,
+            price: document.getElementById('price').value,
+            quantity: document.getElementById('quantity').value,
+            stop_loss: document.getElementById('sl').value,
+            take_profit: document.getElementById('tp').value
+        };
+
+        if(!data.price || data.price <= 0) {
+            alert('请输入有效的买入价格');
+            btn.disabled = false; btn.innerText = '确认买入 (SIMULATE)';
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/trade/execute/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            const res = await response.json();
+
+            if(res.status === 'success') {
+                alert(`交易成功！\n订单已生成，当前余额: ${res.new_balance}`);
+                window.location.href = "{% url 'dashboard' %}";
+            } else {
+                alert('交易失败: ' + res.message);
+                btn.disabled = false; btn.innerText = '确认买入 (SIMULATE)';
+            }
+        } catch(e) {
+            alert('系统错误');
+        }
+    }
+</script>
+</body>
+</html>

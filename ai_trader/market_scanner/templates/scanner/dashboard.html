@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 交易分析终端 | Quantum Vision</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg-dark: #0f172a; --card-bg: #1e293b; --text-main: #f8fafc; --accent-blue: #3b82f6; }
+        body { background-color: var(--bg-dark); color: var(--text-main); font-family: 'Inter', sans-serif; }
+        .glass-card { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 16px; box-shadow: 0 4px 30px rgba(0,0,0,0.5); }
+        .btn-glow { background: linear-gradient(45deg, var(--accent-blue), #6366f1); border: none; color: white; box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
+        .modal-content { background-color: var(--card-bg); color: var(--text-main); border: 1px solid rgba(255,255,255,0.1); }
+        .form-control, .form-select { background-color: #0f172a; border-color: #334155; color: white; }
+        .form-control:focus { background-color: #0f172a; color: white; border-color: var(--accent-blue); box-shadow: 0 0 0 0.25rem rgba(59, 130, 246, 0.25); }
+        .metric-box { background: rgba(255,255,255,0.05); border-radius: 12px; padding: 10px; text-align: center; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+        .metric-value { font-family: 'JetBrains Mono'; font-size: 1.4rem; color: var(--accent-blue); }
+        .metric-label { font-size: 0.75rem; color: #94a3b8; margin-bottom: 4px; }
+
+        /* 信号样式 */
+        .badge-buy { background-color: rgba(25, 135, 84, 0.2); color: #198754; border: 1px solid #198754; }
+        .badge-sell { background-color: rgba(220, 53, 69, 0.2); color: #dc3545; border: 1px solid #dc3545; }
+        .badge-wait { background-color: rgba(255, 193, 7, 0.2); color: #ffc107; border: 1px solid #ffc107; }
+        .hover-red:hover { color: #dc3545 !important; }
+
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-transparent pt-3 px-4">
+    <div class="container-fluid">
+        <span class="navbar-brand fw-bold"><i class="fa-solid fa-brain me-2 text-primary"></i>Quantum Vision</span>
+        <div class="d-flex align-items-center">
+            {% if user.is_authenticated %}
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle btn-sm" type="button" data-bs-toggle="dropdown">
+                        <i class="fa-solid fa-user-astronaut me-1"></i> {{ user.username }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#settingsModal"><i class="fa-solid fa-gear me-2"></i>API 设置</a></li>
+                        <li><a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#strategyModal"><i class="fa-solid fa-filter me-2"></i>策略阈值</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="#" onclick="logout()"><i class="fa-solid fa-right-from-bracket me-2"></i>退出登录</a></li>
+                    </ul>
+                </div>
+            {% else %}
+                <button class="btn btn-primary btn-sm me-2" data-bs-toggle="modal" data-bs-target="#loginModal">登录</button>
+                <button class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#registerModal">注册</button>
+            {% endif %}
+        </div>
+    </div>
+</nav>
+
+<div class="container py-4">
+    <div class="row g-4">
+        <div class="col-lg-4">
+            <div class="glass-card h-100 p-4">
+                <h5 class="mb-4 text-white"><i class="fa-solid fa-satellite-dish me-2"></i>信号采集</h5>
+                {% if user.is_authenticated %}
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <input type="file" name="chart_image" class="form-control mb-3" required onchange="previewImage(this)">
+                        <img id="imgPreview" class="img-fluid rounded mb-3" style="display:none; max-height: 200px; object-fit: contain;">
+                        <button type="submit" class="btn btn-glow w-100 rounded-pill py-2">开始分析</button>
+                    </form>
+                {% else %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="fa-solid fa-lock fa-3x mb-3"></i>
+                        <p>请先登录以使用 AI 分析功能</p>
+                    </div>
+                {% endif %}
+
+                <hr class="border-secondary my-4">
+
+                <h6 class="text-muted small">历史档案 (History)</h6>
+                <div class="list-group list-group-flush" style="max-height: 500px; overflow-y: auto;">
+                {% for item in history %}
+                <div class="list-group-item bg-transparent border-secondary px-0 {% if record and record.id == item.id %}bg-white bg-opacity-10{% endif %}">
+                    <div class="d-flex justify-content-between align-items-center">
+
+                        <a href="?view_id={{ item.id }}" class="text-decoration-none flex-grow-1">
+                            <div class="d-flex align-items-center">
+                                <i class="fa-solid fa-circle me-2
+                                   {% if item.final_signal == 'BUY' %}text-success
+                                   {% elif item.final_signal == 'SELL' %}text-danger
+                                   {% else %}text-secondary{% endif %}" style="font-size: 0.5rem;"></i>
+
+                                <div>
+                                    <div class="text-white small" style="font-family: 'JetBrains Mono'">{{ item.created_at|date:"m-d H:i" }}</div>
+                                    <span class="badge
+                                        {% if item.final_signal == 'BUY' %}bg-success bg-opacity-25 text-success border border-success
+                                        {% elif item.final_signal == 'SELL' %}bg-danger bg-opacity-25 text-danger border border-danger
+                                        {% else %}bg-secondary bg-opacity-25 text-secondary border border-secondary{% endif %}
+                                        py-0 px-2" style="font-size: 0.7rem;">
+                                        {{ item.final_signal|default:item.signal }}
+                                    </span>
+                                </div>
+                            </div>
+                        </a>
+
+                        <div class="btn-group">
+                            <a href="?view_id={{ item.id }}" class="btn btn-sm btn-link text-info" title="加载此分析">
+                                <i class="fa-regular fa-eye"></i>
+                            </a>
+
+                            <form action="{% url 'delete_record' item.id %}" method="POST" class="d-inline" onsubmit="return confirm('确定永久删除这条记录吗？')">
+                                {% csrf_token %}
+                                <button class="btn btn-sm btn-link text-secondary hover-red" title="删除">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="text-center text-muted small py-3">暂无历史记录</div>
+                {% endfor %}
+            </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            {% if result %}
+            <div class="glass-card h-100 p-4">
+                <div class="row">
+                    <div class="col-md-5">
+                        <img src="{{ record.chart_image.url }}" class="img-fluid rounded border border-secondary w-100 mb-3">
+
+                        <div class="mb-3">
+                            <h6 class="text-muted small">风险侦测 (Risk Factors)</h6>
+                            {% if result.risk_factors %}
+                                {% for risk in result.risk_factors %}
+                                    <div class="alert alert-danger py-1 px-2 small mb-1"><i class="fa-solid fa-triangle-exclamation me-1"></i>{{ risk }}</div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="text-success small"><i class="fa-solid fa-check-circle me-1"></i> 无显著风险</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <h6 class="text-muted small">关键点位 (Key Levels)</h6>
+                            <ul class="list-group list-group-flush small">
+                                <li class="list-group-item bg-transparent text-light border-secondary d-flex justify-content-between px-0">
+                                    <span>支撑 (Support)</span>
+                                    <span class="text-success">{{ result.support_levels|join:", " }}</span>
+                                </li>
+                                <li class="list-group-item bg-transparent text-light border-secondary d-flex justify-content-between px-0">
+                                    <span>压力 (Resistance)</span>
+                                    <span class="text-danger">{{ result.resistance_levels|join:", " }}</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="col-md-7">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h4 class="card-title m-0">决策分析</h4>
+                        <div class="mt-1">
+                            <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary me-2" title="AI 原始建议">
+                                AI: {{ record.raw_signal|default:result.signal }}
+                            </span>
+                            <i class="fa-solid fa-arrow-right text-muted me-2" style="font-size: 0.8rem;"></i>
+                            <span class="badge rounded-pill px-3 py-2
+                                {% if record.final_signal == 'BUY' or result.final_signal == 'BUY' %}badge-buy
+                                {% elif record.final_signal == 'SELL' or result.final_signal == 'SELL' %}badge-sell
+                                {% else %}badge-wait{% endif %}">
+                                建议: {{ record.final_signal|default:result.final_signal|default:result.signal }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#strategyModal" title="调整策略阈值">
+                            <i class="fa-solid fa-sliders"></i>
+                        </button>
+
+                        {% if record.id %}
+                            <a href="{% url 'trade_ticket' record.id %}" class="btn btn-success btn-sm fw-bold shadow-lg">
+                                <i class="fa-solid fa-cart-shopping me-1"></i> 交易 (Trade)
+                            </a>
+                        {% else %}
+                            <button class="btn btn-success btn-sm fw-bold shadow-lg" disabled title="需先生成分析记录">
+                                <i class="fa-solid fa-cart-shopping me-1"></i> 交易 (Trade)
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+                            </div>
+
+                            <button class="btn btn-outline-info btn-sm" data-bs-toggle="modal" data-bs-target="#strategyModal">
+                                <i class="fa-solid fa-sliders me-1"></i> 调整阈值
+                            </button>
+                        </div>
+
+                        <div class="alert {% if '✅' in record.strategy_reason or '✅' in result.strategy_reason %}alert-success{% else %}alert-warning{% endif %} py-2 px-3 mb-3 small d-flex align-items-center">
+                            <i class="fa-solid fa-filter me-2"></i>
+                            <div>
+                                <strong>策略判定：</strong> {{ record.strategy_reason|default:result.strategy_reason|default:"无策略数据" }}
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-2">
+                            <div class="col-3">
+                                <div class="metric-box">
+                                    <div class="metric-label">评分</div>
+                                    <div class="metric-value">{{ result.score }}</div>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="metric-box">
+                                    <div class="metric-label">趋势</div>
+                                    <div class="fw-bold mt-1 small">{{ result.trend }}</div>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="metric-box">
+                                    <div class="metric-label">均线</div>
+                                    <div class="fw-bold mt-1 small text-truncate" title="{{ result.ma_structure }}">{{ result.ma_structure }}</div>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="metric-box">
+                                    <div class="metric-label">阶段</div>
+                                    <div class="fw-bold mt-1 small text-truncate" title="{{ result.trend_stage }}">{{ result.trend_stage }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row g-2 mb-3">
+                            <div class="col-3">
+                                <div class="metric-box">
+                                    <div class="metric-label">置信度</div>
+                                    <div class="metric-value {% if result.confidence < 60 %}text-warning{% else %}text-success{% endif %}" style="font-size: 1.2rem;">
+                                        {{ result.confidence|default:"--" }}%
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-3">
+                                <div class="metric-box">
+                                    <div class="metric-label">波动率</div>
+                                    <div class="fw-bold mt-1 small {% if result.volatility_status == 'High' %}text-danger{% endif %}">
+                                        {{ result.volatility_status|default:"Normal" }}
+                                    </div>
+                                </div>
+                            </div>
+                             <div class="col-6">
+                                <div class="metric-box">
+                                    <div class="metric-label">主导形态</div>
+                                    <div class="fw-bold mt-1 small text-white text-truncate" title="{{ result.primary_pattern }}">
+                                        {{ result.primary_pattern|default:"None" }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-dark rounded border border-secondary text-light small fst-italic">
+                            "{{ result.reason }}"
+                        </div>
+                        <div class="mt-3 text-end">
+                            <small class="text-muted">数据源文件已保存至: </small>
+                            <span class="text-info font-monospace small">{% if record.json_file %}{{ record.json_file.name }}{% else %}未生成{% endif %}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <div class="glass-card h-100 d-flex flex-column justify-content-center align-items-center text-center p-5 text-muted">
+                <i class="fa-solid fa-robot fa-4x mb-4 opacity-25"></i>
+                <h4>准备就绪</h4>
+                <p>配置 API 后上传图片，系统将自动生成分析报告并存档。</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="loginModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">用户登录</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="loginUser" class="form-control mb-3" placeholder="用户名">
+                <input type="password" id="loginPass" class="form-control mb-3" placeholder="密码">
+                <button onclick="performLogin()" class="btn btn-primary w-100 mb-2">登录</button>
+                <div class="d-flex justify-content-between small">
+                    <a href="#" data-bs-toggle="modal" data-bs-target="#resetModal">忘记密码?</a>
+                    <a href="#" data-bs-toggle="modal" data-bs-target="#registerModal">注册账号</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="registerModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">新用户注册</h5></div>
+            <div class="modal-body">
+                <input type="text" id="regUser" class="form-control mb-2" placeholder="用户名">
+                <input type="password" id="regPass" class="form-control mb-2" placeholder="密码 (数字+英文, >6位)">
+                <input type="text" id="regQuestion" class="form-control mb-2" placeholder="密保问题 (如: 你的小学名字?)">
+                <input type="text" id="regAnswer" class="form-control mb-3" placeholder="密保答案">
+                <button onclick="performRegister()" class="btn btn-success w-100">注册并登录</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="resetModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">找回密码</h5></div>
+            <div class="modal-body">
+                <input type="text" id="resetUser" class="form-control mb-2" placeholder="用户名">
+                <input type="text" id="resetQuestion" class="form-control mb-2" placeholder="密保问题">
+                <input type="text" id="resetAnswer" class="form-control mb-2" placeholder="密保答案">
+                <input type="password" id="newPass" class="form-control mb-3" placeholder="新密码 (数字+英文)">
+                <button onclick="performReset()" class="btn btn-warning w-100">重置密码</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="settingsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fa-solid fa-sliders me-2"></i>模型接口配置</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label text-muted small">API Endpoint (Base URL)</label>
+                    <input type="text" id="apiBaseUrl" class="form-control" value="{{ user.userprofile.api_base_url }}" placeholder="https://...">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-muted small">API Key</label>
+                    <div class="input-group">
+                        <input type="password" id="apiKey" class="form-control" value="{{ user.userprofile.api_key }}" placeholder="sk-...">
+                        <button class="btn btn-outline-secondary" type="button" onclick="toggleKey()"><i class="fa-solid fa-eye"></i></button>
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2 mb-3">
+                    <button class="btn btn-outline-info btn-sm" onclick="fetchModels()">
+                        <span id="fetchSpinner" class="spinner-border spinner-border-sm d-none"></span>
+                        <i class="fa-solid fa-link me-1"></i> 连接服务器并获取模型列表
+                    </button>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label text-muted small">选择模型 (Selected Model)</label>
+                    <select id="modelSelect" class="form-select">
+                        <option value="{{ user.userprofile.selected_model }}" selected>{{ user.userprofile.selected_model }}</option>
+                        <option value="qwen-vl-max">qwen-vl-max (默认)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary w-100" onclick="saveSettings()">保存配置</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="strategyModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fa-solid fa-filter me-2"></i>交易阈值设置</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between">
+                        <span><i class="fa-solid fa-star-half-stroke me-1"></i>最低买入评分</span>
+                        <span id="scoreVal" class="text-info">{{ user.strategyconfig.min_score_buy }}</span>
+                    </label>
+                    <input type="range" class="form-range" id="minScore" min="0" max="100" value="{{ user.strategyconfig.min_score_buy }}" oninput="document.getElementById('scoreVal').innerText = this.value">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between">
+                        <span><i class="fa-regular fa-eye me-1"></i>最低 AI 置信度</span>
+                        <span id="confVal" class="text-warning">{{ user.strategyconfig.min_confidence }}</span>
+                    </label>
+                    <input type="range" class="form-range" id="minConf" min="0" max="100" value="{{ user.strategyconfig.min_confidence }}" oninput="document.getElementById('confVal').innerText = this.value">
+                    <div class="form-text text-muted small" style="font-size: 0.75rem;">低于此值的分析将被视为无效。</div>
+                </div>
+
+                <hr class="border-secondary my-3">
+
+                <div class="mb-3">
+                    <label class="form-label"><i class="fa-solid fa-triangle-exclamation me-1"></i>允许最大风险因子数</label>
+                    <select id="maxRisks" class="form-select">
+                        <option value="0" {% if user.strategyconfig.max_risk_factors == 0 %}selected{% endif %}>0 (极度严格)</option>
+                        <option value="1" {% if user.strategyconfig.max_risk_factors == 1 %}selected{% endif %}>1 (标准)</option>
+                        <option value="2" {% if user.strategyconfig.max_risk_factors == 2 %}selected{% endif %}>2 (宽松)</option>
+                        <option value="3" {% if user.strategyconfig.max_risk_factors == 3 %}selected{% endif %}>3 (激进)</option>
+                    </select>
+                </div>
+
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="reqBullish" {% if user.strategyconfig.require_bullish_ma %}checked{% endif %}>
+                    <label class="form-check-label">强制要求均线多头 (Bullish Only)</label>
+                </div>
+
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="allowSideways" {% if user.strategyconfig.allow_sideways %}checked{% endif %}>
+                    <label class="form-check-label">允许震荡/盘整行情</label>
+                </div>
+
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="allowHighVol" {% if user.strategyconfig.allow_high_volatility %}checked{% endif %}>
+                    <label class="form-check-label text-danger">允许高波动率 (High Volatility)</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary w-100" onclick="saveStrategy()">保存策略</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    async function postData(url, data) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        return response.json();
+    }
+
+    async function performLogin() {
+        const u = document.getElementById('loginUser').value;
+        const p = document.getElementById('loginPass').value;
+        const res = await postData('/api/login/', {username: u, password: p});
+        if(res.status === 'success') location.reload();
+        else alert(res.message);
+    }
+
+    async function performRegister() {
+        const data = {
+            username: document.getElementById('regUser').value,
+            password: document.getElementById('regPass').value,
+            security_question: document.getElementById('regQuestion').value,
+            security_answer: document.getElementById('regAnswer').value
+        };
+        const res = await postData('/api/register/', data);
+        if(res.status === 'success') location.reload();
+        else alert(res.message);
+    }
+
+    async function performReset() {
+        const data = {
+            username: document.getElementById('resetUser').value,
+            question: document.getElementById('resetQuestion').value,
+            answer: document.getElementById('resetAnswer').value,
+            new_password: document.getElementById('newPass').value
+        };
+        const res = await postData('/api/reset-password/', data);
+        if(res.status === 'success') { alert('密码重置成功，已自动登录'); location.reload(); }
+        else alert(res.message);
+    }
+
+    async function logout() {
+        await fetch('/api/logout/');
+        location.reload();
+    }
+
+    async function fetchModels() {
+        const btn = document.querySelector('button[onclick="fetchModels()"]');
+        const spinner = document.getElementById('fetchSpinner');
+        btn.disabled = true; spinner.classList.remove('d-none');
+
+        const apiKey = document.getElementById('apiKey').value;
+        const baseUrl = document.getElementById('apiBaseUrl').value;
+
+        const res = await postData('/api/fetch-models/', {api_key: apiKey, base_url: baseUrl});
+        spinner.classList.add('d-none'); btn.disabled = false;
+
+        if(res.status === 'success') {
+            const select = document.getElementById('modelSelect');
+            select.innerHTML = '';
+            res.models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m;
+                opt.text = m;
+                select.appendChild(opt);
+            });
+            alert(res.message || `成功获取 ${res.models.length} 个模型！`);
+        } else {
+            alert('获取失败: ' + res.message);
+        }
+    }
+
+    async function saveSettings() {
+        const data = {
+            api_key: document.getElementById('apiKey').value,
+            base_url: document.getElementById('apiBaseUrl').value,
+            model: document.getElementById('modelSelect').value
+        };
+        const res = await postData('/api/save-settings/', data);
+        if(res.status === 'success') {
+            alert('配置已保存！下次分析将使用新设置。');
+            bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
+        } else {
+            alert('保存失败');
+        }
+    }
+
+    // 更新后的策略保存逻辑 (包含新参数)
+    async function saveStrategy() {
+        const data = {
+            min_score: document.getElementById('minScore').value,
+            max_risks: document.getElementById('maxRisks').value,
+            require_bullish: document.getElementById('reqBullish').checked,
+            allow_sideways: document.getElementById('allowSideways').checked,
+            // 新增字段
+            min_confidence: document.getElementById('minConf').value,
+            allow_high_volatility: document.getElementById('allowHighVol').checked
+        };
+        const res = await postData('/api/save-strategy/', data);
+        if(res.status === 'success') {
+            alert('策略阈值已更新！新的分析将应用此标准。');
+            bootstrap.Modal.getInstance(document.getElementById('strategyModal')).hide();
+        } else {
+            alert('保存失败');
+        }
+    }
+
+    function toggleKey() {
+        const input = document.getElementById('apiKey');
+        input.type = input.type === 'password' ? 'text' : 'password';
+    }
+
+    function previewImage(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = document.getElementById('imgPreview');
+                img.src = e.target.result;
+                img.style.display = 'block';
+            }
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+</script>
+</body>
+</html>

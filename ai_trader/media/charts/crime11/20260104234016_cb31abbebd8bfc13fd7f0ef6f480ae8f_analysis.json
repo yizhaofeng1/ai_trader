@@ -1,0 +1,35 @@
+{
+    "symbol": "002149",
+    "trend": "Up",
+    "trend_stage": "Accelerating",
+    "primary_pattern": "Box",
+    "ma_structure": "Bullish",
+    "price_ma_deviation": "High",
+    "volume_state": "Expanding",
+    "volatility_status": "High",
+    "support_levels": [
+        41.62,
+        33.72
+    ],
+    "resistance_levels": [
+        48.5
+    ],
+    "risk_factors": [
+        "Overextended from long-term MA",
+        "KDJ indicator in overbought zone",
+        "High price volatility",
+        "Potential for bearish MACD divergence"
+    ],
+    "signal": "WAIT",
+    "signal_applicable_to": "Both",
+    "score": 60,
+    "confidence": 85,
+    "key_levels": {
+        "short_term_hold": 41.62,
+        "trend_invalid": 33.72
+    },
+    "reason": "价格脱离盘整区后进入加速上涨阶段，均线多头排列。但短期乖离率过高，指标处于超买区，面临回调压力。",
+    "final_signal": "WAIT",
+    "raw_signal": "WAIT",
+    "strategy_reason": "AI 原始分析（未经过滤）"
+}
